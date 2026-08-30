@@ -57,34 +57,49 @@ impl BarRegion {
 
     /// Fraction of the bar that is filled, 0.0 to 1.0.
     ///
-    /// Validated against on-screen OCR to about 0.15 percentage points.
+    /// Several interior rows are measured and the median taken. A single row is
+    /// easily fooled: dark detail inside the fill ends the walk early, and
+    /// bright level geometry showing through extends it too far.
     #[must_use]
     pub fn fill_ratio(&self, frame: &Frame) -> Option<f64> {
         let start = self.x0 + CAP_INSET;
         let end = self.x1.checked_sub(CAP_INSET)?;
-        if end <= start {
+        if end <= start || self.y_bottom <= self.y_top + 2 {
             return None;
         }
 
-        let y = self.interior_y();
         let span = end - start;
-        let mut edge = 0;
-        let mut gap = 0;
+        let mut edges: Vec<u32> = ((self.y_top + 2)..(self.y_bottom - 1))
+            .map(|y| fill_edge(frame, start, span, y))
+            .collect();
 
-        for offset in 0..=span {
-            if frame.pixel(start + offset, y) >= FILL_LUMA {
-                edge = offset;
-                gap = 0;
-            } else {
-                gap += 1;
-                if gap > FILL_GAP_TOLERANCE {
-                    break;
-                }
+        if edges.is_empty() {
+            return None;
+        }
+        edges.sort_unstable();
+        let median = edges[edges.len() / 2];
+
+        Some(f64::from(median) / f64::from(span))
+    }
+}
+
+/// Rightmost filled pixel on one row, tolerating small dark gaps.
+fn fill_edge(frame: &Frame, start: u32, span: u32, y: u32) -> u32 {
+    let mut edge = 0;
+    let mut gap = 0;
+
+    for offset in 0..=span {
+        if frame.pixel(start + offset, y) >= FILL_LUMA {
+            edge = offset;
+            gap = 0;
+        } else {
+            gap += 1;
+            if gap > FILL_GAP_TOLERANCE {
+                break;
             }
         }
-
-        Some(f64::from(edge) / f64::from(span))
     }
+    edge
 }
 
 /// Longest run of pixels at or above `luma` in one row.

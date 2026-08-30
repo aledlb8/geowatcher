@@ -67,6 +67,20 @@ fn main() {
                 None => unread += 1,
             }
         }
+
+        // A run should climb smoothly; sudden jumps mean a misread.
+        let series: Vec<f64> = frames
+            .iter()
+            .filter_map(|f| read_percentage(f, &bar, &templates).map(|r| r.value))
+            .collect();
+        let steps: Vec<f64> = series.windows(2).map(|w| w[1] - w[0]).collect();
+        let smooth = steps.iter().filter(|&&d| (0.0..3.0).contains(&d)).count();
+        let resets = steps.iter().filter(|&&d| d < -5.0).count();
+        println!(
+            "{dir}: {} readings, {smooth} smooth steps, {resets} resets, {} jumps",
+            series.len(),
+            steps.len() - smooth - resets
+        );
     }
 
     let total = agree + disagree;

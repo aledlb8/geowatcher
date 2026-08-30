@@ -2,6 +2,7 @@
 
 pub mod capture;
 pub mod detect;
+pub mod run;
 pub mod twitch;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/

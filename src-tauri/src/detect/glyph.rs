@@ -20,7 +20,7 @@ const DOT_MAX_WIDTH: u32 = 6;
 const DOT_MAX_HEIGHT: u32 = 6;
 
 /// Fraction of cells that must agree for a match to count.
-const MIN_SIMILARITY: f64 = 0.88;
+const MIN_SIMILARITY: f64 = 0.84;
 
 /// A glyph scaled to [`GLYPH_W`] x [`GLYPH_H`].
 #[derive(Debug, Clone, PartialEq, Eq)]
