@@ -42,6 +42,9 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 # The Tauri command macro generates functions that take owned values by design.
 needless_pass_by_value = "allow"
+# Library-oriented doc lints; this is an application.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 
 # Release bundles favour size and speed over build time.

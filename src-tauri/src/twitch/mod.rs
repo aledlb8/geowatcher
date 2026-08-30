@@ -1,8 +1,4 @@
 //! Resolving Twitch channels to playable HLS streams.
-//!
-//! The watcher needs three things from Twitch and nothing more: whether a
-//! channel is live, a playlist URL for it, and a quality tier cheap enough to
-//! decode continuously. Everything here serves one of those three.
 
 mod client;
 mod error;

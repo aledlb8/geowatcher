@@ -1,53 +1,36 @@
-//! Parsing of Twitch's HLS master playlist.
-//!
-//! Usher answers with a standard M3U8 master playlist in which each
-//! `#EXT-X-STREAM-INF` line is immediately followed by the variant's URL:
-//!
-//! ```text
-//! #EXT-X-STREAM-INF:BANDWIDTH=1427999,RESOLUTION=852x480,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="480p30",FRAME-RATE=30.000
-//! https://use15.playlist.ttvnw.net/v1/playlist/...
-//! ```
-//!
-//! Note the comma inside the quoted `CODECS` value: attribute lists cannot be
-//! split naively on commas.
+//! Twitch HLS master playlist parsing. Each `#EXT-X-STREAM-INF` line is
+//! followed by its variant URL.
 
-/// The analysis pipeline wants roughly this vertical resolution: large enough
-/// for the percentage glyphs to survive, small enough to stay cheap to decode.
+/// Tall enough for the percentage glyphs, cheap enough to decode continuously.
 const PREFERRED_HEIGHT: u32 = 480;
 
-/// Below this the percentage text is no longer reliably legible.
+/// Below this the percentage stops being legible.
 const MIN_USABLE_HEIGHT: u32 = 360;
 
-/// A single quality option advertised by Twitch.
+/// A quality option, e.g. `480p30` or `chunked` for source.
 #[derive(Debug, Clone)]
 pub struct Variant {
-    /// Twitch's name for the variant, e.g. `480p30`, or `chunked` for source.
     pub name: String,
-    /// The media playlist URL for this quality.
     pub url: String,
-    /// Pixel dimensions, when advertised. Audio-only variants have none.
+    /// Absent on audio-only variants.
     pub resolution: Option<(u32, u32)>,
-    /// Frames per second, when advertised.
     pub frame_rate: Option<f32>,
 }
 
 impl Variant {
-    /// Height in pixels, or `None` if Twitch advertised no resolution.
     #[must_use]
     pub fn height(&self) -> Option<u32> {
         self.resolution.map(|(_, h)| h)
     }
 }
 
-/// The set of qualities available for a live channel.
 #[derive(Debug, Clone)]
 pub struct MasterPlaylist {
-    /// Every video variant, in the order Twitch listed them.
+    /// In the order Twitch listed them.
     pub variants: Vec<Variant>,
 }
 
 impl MasterPlaylist {
-    /// Parses a master playlist, keeping only entries that carry a URL.
     #[must_use]
     pub fn parse(body: &str) -> Self {
         let mut variants = Vec::new();
@@ -82,18 +65,13 @@ impl MasterPlaylist {
         Self { variants }
     }
 
-    /// Looks a variant up by its Twitch name, e.g. `480p30`.
     #[must_use]
     pub fn by_name(&self, name: &str) -> Option<&Variant> {
         self.variants.iter().find(|v| v.name == name)
     }
 
-    /// Picks the cheapest variant that still renders the percentage legibly.
-    ///
-    /// Prefers the height closest to [`PREFERRED_HEIGHT`] among variants at or
-    /// above [`MIN_USABLE_HEIGHT`]. If Twitch advertised nothing that tall it
-    /// falls back to the tallest variant available, and finally to the first
-    /// variant of any kind so an audio-only channel still resolves to something.
+    /// Cheapest variant that still renders the percentage legibly, falling back
+    /// to the tallest available, then to anything at all.
     #[must_use]
     pub fn best_for_analysis(&self) -> Option<&Variant> {
         self.variants
@@ -109,7 +87,7 @@ impl MasterPlaylist {
     }
 }
 
-/// Reads one `KEY=value` or `KEY="value"` attribute out of an M3U8 attribute list.
+/// Reads one `KEY=value` or `KEY="value"` attribute.
 fn attribute(attrs: &str, key: &str) -> Option<String> {
     split_attributes(attrs).into_iter().find_map(|pair| {
         let (found, value) = pair.split_once('=')?;
@@ -127,7 +105,7 @@ fn attribute(attrs: &str, key: &str) -> Option<String> {
     })
 }
 
-/// Splits an attribute list on commas that are not inside a quoted value.
+/// Splits on commas outside quotes; `CODECS="a,b"` contains one.
 fn split_attributes(attrs: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -147,7 +125,6 @@ fn split_attributes(attrs: &str) -> Vec<&str> {
     parts
 }
 
-/// Parses a `WIDTHxHEIGHT` resolution attribute.
 fn parse_resolution(value: &str) -> Option<(u32, u32)> {
     let (width, height) = value.split_once('x')?;
     Some((width.trim().parse().ok()?, height.trim().parse().ok()?))
