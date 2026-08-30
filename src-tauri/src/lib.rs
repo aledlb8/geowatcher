@@ -1,3 +1,7 @@
+//! `GeoWatcher`: watches Geometry Dash streams and alerts on real runs.
+
+pub mod twitch;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {

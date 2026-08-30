@@ -1,6 +1,10 @@
 # GeoWatcher
 
-A cross-platform desktop application built with [Tauri 2](https://tauri.app), React and TypeScript.
+Watches [Geometry Dash](https://www.robtopgames.com/) streams on Twitch and alerts you when
+someone gets far on a **real** attempt — not a Start Pos run.
+
+Built with [Tauri 2](https://tauri.app): Rust handles stream capture and frame analysis,
+React renders the channel table.
 
 [![CI](https://github.com/aledlb8/geowatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/aledlb8/geowatcher/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)

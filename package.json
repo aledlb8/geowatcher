@@ -2,7 +2,7 @@
   "name": "geowatcher",
   "version": "0.1.0",
   "private": true,
-  "description": "A cross-platform desktop application built with Tauri, React and TypeScript.",
+  "description": "Watches Geometry Dash streams on Twitch and alerts you when someone gets far on a real attempt.",
   "license": "MIT OR Apache-2.0",
   "author": "Alejandro de la Blanca",
   "repository": {
