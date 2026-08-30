@@ -1,6 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -13,9 +13,7 @@ function App() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-zinc-50 p-8 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <h1 className="text-3xl font-semibold tracking-tight">
-        Welcome to Tauri + React
-      </h1>
+      <h1 className="text-3xl font-semibold tracking-tight">Welcome to Tauri + React</h1>
 
       <div className="flex items-center gap-8">
         <a href="https://vite.dev" target="_blank" rel="noreferrer">

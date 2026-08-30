@@ -1,0 +1,47 @@
+name: Bug report
+description: Report something that is not working as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the app
+        2. Click ...
+        3. See the error
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Toolchain
+      description: For build problems, paste the output of `npm run doctor`.
+      render: text
+    validations:
+      required: false
