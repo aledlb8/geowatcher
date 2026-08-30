@@ -4,6 +4,7 @@ mod bar;
 mod calibrate;
 mod glyph;
 mod percent;
+mod source;
 mod templates;
 mod text;
 
@@ -11,6 +12,7 @@ pub use bar::{candidates, BarRegion};
 pub use calibrate::{Calibration, Calibrator};
 pub use glyph::{is_decimal_point, GlyphBitmap, TemplateSet, GLYPH_H, GLYPH_W};
 pub use percent::{read_percentage, Reading};
+pub use source::{Source, SourcePicker};
 pub use text::{segment, GlyphBox, TextRegion};
 
 /// Template set shipped with the app.

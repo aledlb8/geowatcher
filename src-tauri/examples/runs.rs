@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use geowatcher_lib::capture::Frame;
-use geowatcher_lib::detect::{builtin, candidates, read_percentage, BarRegion, Calibrator};
+use geowatcher_lib::detect::{
+    builtin, candidates, read_percentage, BarRegion, Calibrator, SourcePicker,
+};
 use geowatcher_lib::run::{Config, Event, Sample, Tracker};
 
 fn main() {
@@ -35,12 +37,12 @@ fn main() {
     });
 
     let (mut attempts, mut real, mut alerts) = (0, 0, 0);
+    let mut picker = SourcePicker::new();
 
     for (index, frame) in frames.iter().enumerate() {
-        let sample = Sample::new(
-            read_percentage(frame, &bar, &templates).map(|r| r.value),
-            bar.fill_ratio(frame).map(|r| r * 100.0),
-        );
+        let text = read_percentage(frame, &bar, &templates).map(|r| r.value);
+        let bar_value = bar.fill_ratio(frame).map(|r| r * 100.0);
+        let sample = Sample::new(picker.pick(text, bar_value), bar_value);
         for event in tracker.observe(sample) {
             match event {
                 Event::Started { at, from_start } => {
@@ -68,6 +70,11 @@ fn main() {
         }
     }
 
+    println!(
+        "
+source: {:?}",
+        picker.source()
+    );
     println!("\n{attempts} attempts ({real} from the start), {alerts} alerts");
     println!("best real attempt: {:.2}%", tracker.best());
 }

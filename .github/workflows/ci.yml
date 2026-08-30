@@ -95,6 +95,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Fetch ffmpeg sidecar
+        run: node scripts/fetch-ffmpeg.mjs --target ${{ matrix.target }}
+
       - name: Build bundle
         run: npm run build -- --target ${{ matrix.target }}
 

@@ -31,6 +31,13 @@ const JOIN: f64 = 0.88;
 /// Clusters smaller than this are noise.
 const MIN_MEMBERS: usize = 8;
 
+/// Votes needed before a cluster's label is believed.
+const MIN_VOTES: usize = 3;
+
+/// Variants kept per label. Texture packs change the font, so one bitmap per
+/// digit only ever matches the channels it was built from.
+const MAX_VARIANTS: usize = 6;
+
 #[derive(Default)]
 struct Cluster {
     members: Vec<GlyphBitmap>,
@@ -145,9 +152,9 @@ fn add_to_clusters(clusters: &mut Vec<Cluster>, bitmap: GlyphBitmap, vote: Optio
     }
 }
 
-/// Keeps the best-supported cluster for each label.
+/// Keeps every well-supported cluster, several per label.
 fn name_clusters(clusters: &[Cluster]) -> Vec<(char, &Cluster)> {
-    let mut best: HashMap<char, (usize, &Cluster)> = HashMap::new();
+    let mut by_label: HashMap<char, Vec<(usize, &Cluster)>> = HashMap::new();
 
     for cluster in clusters {
         if cluster.members.len() < MIN_MEMBERS {
@@ -156,14 +163,23 @@ fn name_clusters(clusters: &[Cluster]) -> Vec<(char, &Cluster)> {
         let Some((&label, &votes)) = cluster.votes.iter().max_by_key(|(_, &n)| n) else {
             continue;
         };
-        let entry = best.entry(label).or_insert((votes, cluster));
-        if votes > entry.0 {
-            *entry = (votes, cluster);
+        if votes < MIN_VOTES {
+            continue;
         }
+        by_label.entry(label).or_default().push((votes, cluster));
     }
 
-    let mut out: Vec<(char, &Cluster)> = best.into_iter().map(|(l, (_, c))| (l, c)).collect();
-    out.sort_by_key(|(label, _)| *label);
+    let mut out = Vec::new();
+    let mut labels: Vec<char> = by_label.keys().copied().collect();
+    labels.sort_unstable();
+
+    for label in labels {
+        let mut variants = by_label.remove(&label).unwrap_or_default();
+        variants.sort_by_key(|(votes, cluster)| (std::cmp::Reverse(*votes), cluster.members.len()));
+        for (_, cluster) in variants.into_iter().take(MAX_VARIANTS) {
+            out.push((label, cluster));
+        }
+    }
     out
 }
 

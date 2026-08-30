@@ -23,6 +23,7 @@
     "build": "node scripts/build.mjs",
     "build:debug": "node scripts/build.mjs --debug",
     "build:web": "tsc && vite build",
+    "ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "doctor": "tauri info",

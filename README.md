@@ -30,6 +30,27 @@ React renders the channel table.
 
 Run `npm run doctor` at any point to have Tauri report what it can and cannot find.
 
+### ffmpeg
+
+The app decodes streams with ffmpeg, bundled as a Tauri sidecar so users need
+nothing installed. Fetch it once before building a bundle:
+
+```bash
+npm run ffmpeg                                       # for your platform
+node scripts/fetch-ffmpeg.mjs --target <triple>      # for a specific one
+```
+
+It lands in `src-tauri/binaries/` (git-ignored, ~110 MB) and CI fetches it per
+platform. During `npm run dev` no bundle exists, so the app falls back to
+whatever `ffmpeg` is on your `PATH`.
+
+> **Licensing.** Windows and Linux use [BtbN's](https://github.com/BtbN/FFmpeg-Builds)
+> **LGPL** builds, which this permissively licensed app can ship. No LGPL macOS
+> build is published upstream, so the macOS binaries are **GPL** — shipping one
+> makes the whole bundle subject to the GPL. The script prints the licence every
+> time it runs. If that matters to you, require macOS users to install ffmpeg
+> themselves instead of bundling it.
+
 ## Getting started
 
 ```bash
@@ -52,6 +73,7 @@ recompiles the Rust binary and restarts the app.
 | `npm run build` | Build a release bundle for **your** platform |
 | `npm run build:debug` | Same, unoptimised and with debug symbols |
 | `npm run build:web` | Type-check and build the frontend only |
+| `npm run ffmpeg` | Download the ffmpeg sidecar for this platform |
 | `npm run check` | Biome lint + format check |
 | `npm run check:fix` | Apply every safe Biome fix |
 | `npm run typecheck` | TypeScript, no emit |
@@ -130,6 +152,7 @@ requires a signing keypair (`npm run tauri signer generate`).
 │   ├── capabilities/       Per-window permission grants
 │   └── tauri.conf.json     Window, bundle and build configuration
 ├── scripts/build.mjs       Bundle build wrapper
+├── scripts/fetch-ffmpeg.mjs  Downloads the ffmpeg sidecar
 └── .github/workflows/      CI and release automation
 ```
 

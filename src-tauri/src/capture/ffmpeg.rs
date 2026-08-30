@@ -8,6 +8,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
 use super::frame::Frame;
+use super::locate;
 use super::{ANALYSIS_HEIGHT, ANALYSIS_WIDTH};
 
 /// Frames held before the reader starts dropping. Small on purpose: a backlog
@@ -32,7 +33,7 @@ pub struct CaptureOptions {
     pub url: String,
     /// Frames per second handed to the detector.
     pub fps: f32,
-    /// ffmpeg executable; `ffmpeg` resolves via `PATH`.
+    /// ffmpeg executable: the bundled sidecar, or whatever `PATH` provides.
     pub ffmpeg: PathBuf,
 }
 
@@ -42,7 +43,7 @@ impl CaptureOptions {
         Self {
             url: url.into(),
             fps: 3.0,
-            ffmpeg: PathBuf::from("ffmpeg"),
+            ffmpeg: locate::ffmpeg(""),
         }
     }
 

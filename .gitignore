@@ -33,3 +33,6 @@ dist-ssr
 
 # OS noise
 Thumbs.db
+
+# Fetched by scripts/fetch-ffmpeg.mjs; ~100MB, never committed
+src-tauri/binaries/

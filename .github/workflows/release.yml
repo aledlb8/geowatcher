@@ -25,14 +25,17 @@ jobs:
             os: macos-latest
             args: --target universal-apple-darwin
             targets: aarch64-apple-darwin,x86_64-apple-darwin
+            sidecar: universal-apple-darwin
           - label: Linux (x86_64)
             os: ubuntu-22.04
             args: ""
             targets: x86_64-unknown-linux-gnu
+            sidecar: x86_64-unknown-linux-gnu
           - label: Windows (x86_64)
             os: windows-latest
             args: ""
             targets: x86_64-pc-windows-msvc
+            sidecar: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v7
@@ -55,6 +58,9 @@ jobs:
           key: release-${{ matrix.os }}
 
       - run: npm ci
+
+      - name: Fetch ffmpeg sidecar
+        run: node scripts/fetch-ffmpeg.mjs --target ${{ matrix.sidecar }}
 
       # tauri-action runs `beforeBuildCommand` itself, bundles for the host,
       # then uploads each artifact to a single draft release shared by the matrix.

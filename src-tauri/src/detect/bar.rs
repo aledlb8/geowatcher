@@ -14,6 +14,9 @@ const SEARCH_FRACTION: f64 = 0.20;
 /// slider is ~24%, so this threshold rejects it.
 const MIN_RUN_FRACTION: f64 = 0.28;
 
+/// And no more than this. The pause menu's own progress bars run to ~57%.
+const MAX_RUN_FRACTION: f64 = 0.45;
+
 /// Vertical distance between the bar's two borders.
 const MIN_BORDER_GAP: u32 = 7;
 const MAX_BORDER_GAP: u32 = 26;
@@ -133,12 +136,17 @@ pub fn candidates(frame: &Frame) -> Vec<BarRegion> {
     let search_rows = (f64::from(frame.height) * SEARCH_FRACTION) as u32;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let min_run = (f64::from(frame.width) * MIN_RUN_FRACTION) as u32;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let max_run = (f64::from(frame.width) * MAX_RUN_FRACTION) as u32;
 
     // One long run per row is enough; the bar's borders are the widest things
     // this near the top of a level.
     let runs: Vec<Option<(u32, u32)>> = (0..search_rows)
         .map(|y| {
-            longest_run(frame, y, BORDER_LUMA).filter(|&(s, e)| e.saturating_sub(s) >= min_run)
+            longest_run(frame, y, BORDER_LUMA).filter(|&(s, e)| {
+                let width = e.saturating_sub(s);
+                width >= min_run && width <= max_run
+            })
         })
         .collect();
 
@@ -243,6 +251,13 @@ mod tests {
     fn rejects_the_editor_slider() {
         // Narrower than a real bar and lower down; must not be picked up.
         let frame = frame_with_bar(343, 551, 22, 31, 0.0);
+        assert!(candidates(&frame).is_empty());
+    }
+
+    #[test]
+    fn rejects_the_pause_menu_bar() {
+        // The menu's own progress bars are far wider than the gameplay one.
+        let frame = frame_with_bar(197, 687, 32, 39, 0.5);
         assert!(candidates(&frame).is_empty());
     }
 

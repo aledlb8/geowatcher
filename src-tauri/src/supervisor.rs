@@ -13,7 +13,9 @@ use tokio::task::JoinHandle;
 
 use crate::capture::{Capture, CaptureOptions};
 use crate::config::{Channel, Settings};
-use crate::detect::{builtin, read_percentage, BarRegion, Calibration, Calibrator, TemplateSet};
+use crate::detect::{
+    builtin, read_percentage, BarRegion, Calibration, Calibrator, SourcePicker, TemplateSet,
+};
 use crate::run::{self, Sample, Tracker};
 use crate::twitch::{Error as TwitchError, TwitchClient};
 
@@ -205,6 +207,7 @@ impl Watcher {
         let mut calibrator = Calibrator::new();
         let mut bar = self.saved_bar;
         let mut tracker = Tracker::new(self.config);
+        let mut picker = SourcePicker::new();
 
         self.report(if bar.is_some() {
             Status::Watching
@@ -224,10 +227,12 @@ impl Watcher {
             }
             let Some(region) = bar else { continue };
 
-            let sample = Sample::new(
-                read_percentage(&frame, &region, &self.templates).map(|r| r.value),
-                region.fill_ratio(&frame).map(|ratio| ratio * 100.0),
-            );
+            let text = read_percentage(&frame, &region, &self.templates).map(|r| r.value);
+            let bar_value = region.fill_ratio(&frame).map(|ratio| ratio * 100.0);
+
+            // The bar is still reported separately: even when it is not the
+            // source, an empty bar is what marks the start of an attempt.
+            let sample = Sample::new(picker.pick(text, bar_value), bar_value);
 
             for event in tracker.observe(sample) {
                 self.emit(event, stream_url);
