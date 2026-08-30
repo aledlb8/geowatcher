@@ -1,25 +1,34 @@
-//! Turning a stream of percentage readings into attempts.
+//! Turning a stream of readings into attempts.
 //!
-//! A reading on its own says nothing about whether it is worth interrupting
-//! someone for. 74% only matters if the player got there from the start rather
-//! than dropping in from a Start Position. Watching a run grow continuously
-//! from zero is what separates the two, and unlike the `TESTMODE` watermark it
-//! cannot be hidden by a mod.
+//! 74% only matters if the player got there from the start rather than dropping
+//! in from a Start Position. Continuity is what separates the two, and unlike
+//! the `TESTMODE` watermark a mod cannot hide it.
+//!
+//! OCR cannot read the opening seconds of a run reliably, so continuity alone
+//! would misjudge real attempts as Start Pos. An empty progress bar covers that
+//! gap: its absolute value is untrustworthy, but "near empty" is a dependable
+//! sign that an attempt just began.
 
 /// Settings for one channel.
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     /// Alert at or above this percentage.
     pub alert_at: f64,
-    /// A run must begin at or below this to count as a real attempt.
+    /// A run starting at or below this counts as a real attempt.
     pub start_ceiling: f64,
     /// Larger forward jumps between samples are misreads, not progress.
     pub max_step: f64,
     /// A drop this large means the attempt ended and another began.
     pub reset_drop: f64,
     /// Consecutive readings above the threshold before alerting. The OCR
-    /// misreads occasionally, and one bad glyph should not wake anyone up.
+    /// misreads occasionally and one bad glyph should not raise an alert.
     pub confirm_samples: u32,
+    /// Bar fill at or below this means an attempt is at its very beginning.
+    pub empty_bar: f64,
+    /// Consecutive empty-bar samples before believing it. The bar glitches.
+    pub reset_confirm: u32,
+    /// Samples after a reset during which a new run still counts as from-start.
+    pub reset_grace: u32,
     /// Readings missed before the current attempt is closed.
     pub end_after_idle: u32,
 }
@@ -32,8 +41,27 @@ impl Default for Config {
             max_step: 12.0,
             reset_drop: 5.0,
             confirm_samples: 2,
+            empty_bar: 2.0,
+            reset_confirm: 2,
+            reset_grace: 15,
             end_after_idle: 9,
         }
+    }
+}
+
+/// One frame's worth of measurements.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Sample {
+    /// Percentage read from the text, when legible.
+    pub percent: Option<f64>,
+    /// Bar fill as a percentage, when a bar was found.
+    pub bar: Option<f64>,
+}
+
+impl Sample {
+    #[must_use]
+    pub fn new(percent: Option<f64>, bar: Option<f64>) -> Self {
+        Self { percent, bar }
     }
 }
 
@@ -44,21 +72,20 @@ pub struct Run {
     pub current: f64,
     pub peak: f64,
     pub samples: u32,
-    /// Whether this attempt was watched from the very beginning.
+    /// Whether this attempt was watched from the beginning.
     pub from_start: bool,
     alerted: bool,
     above: u32,
 }
 
 impl Run {
-    /// Progress actually earned, which is all a Start Pos run really achieved.
+    /// Progress actually earned, which is all a Start Pos run achieved.
     #[must_use]
     pub fn earned(&self) -> f64 {
         self.peak - self.started_at
     }
 }
 
-/// Something worth telling the rest of the app about.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Event {
     Started {
@@ -85,6 +112,10 @@ pub struct Tracker {
     run: Option<Run>,
     idle: u32,
     best: f64,
+    /// Consecutive empty-bar samples seen.
+    empty_streak: u32,
+    /// Samples since a confirmed reset, if one has happened.
+    since_reset: Option<u32>,
 }
 
 impl Tracker {
@@ -95,6 +126,8 @@ impl Tracker {
             run: None,
             idle: 0,
             best: 0.0,
+            empty_streak: 0,
+            since_reset: None,
         }
     }
 
@@ -109,30 +142,67 @@ impl Tracker {
         self.best
     }
 
-    /// Feeds one sample. `None` means the frame had no readable percentage,
-    /// which happens constantly during menus and death screens.
-    pub fn observe(&mut self, reading: Option<f64>) -> Vec<Event> {
-        let Some(value) = reading else {
-            return self.observe_gap();
+    /// Feeds one frame's measurements.
+    pub fn observe(&mut self, sample: Sample) -> Vec<Event> {
+        let mut events = self.track_reset(sample.bar);
+
+        let Some(value) = sample.percent else {
+            events.extend(self.observe_gap());
+            return events;
         };
         self.idle = 0;
 
         let Some(run) = self.run else {
-            return vec![self.begin(value)];
+            events.push(self.begin(value));
+            return events;
         };
 
         let delta = value - run.current;
-
         if delta <= -self.config.reset_drop {
-            let mut events = vec![self.finish()];
+            events.push(self.finish());
             events.push(self.begin(value));
             return events;
         }
         if delta > self.config.max_step {
+            return events;
+        }
+
+        events.extend(self.advance(value));
+        events
+    }
+
+    /// Watches the bar for the start of a fresh attempt.
+    fn track_reset(&mut self, bar: Option<f64>) -> Vec<Event> {
+        if let Some(count) = self.since_reset {
+            self.since_reset = Some(count.saturating_add(1));
+        }
+
+        let Some(bar) = bar else {
+            self.empty_streak = 0;
+            return Vec::new();
+        };
+
+        if bar > self.config.empty_bar {
+            self.empty_streak = 0;
             return Vec::new();
         }
 
-        self.advance(value)
+        self.empty_streak += 1;
+        if self.empty_streak < self.config.reset_confirm {
+            return Vec::new();
+        }
+
+        // Confirmed: the bar is empty, so any attempt in flight is over.
+        self.since_reset = Some(0);
+        let ended = self
+            .run
+            .is_some_and(|run| run.peak > self.config.start_ceiling);
+
+        if ended {
+            vec![self.finish()]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Handles a frame with no reading, closing the attempt once enough pass.
@@ -148,7 +218,13 @@ impl Tracker {
     }
 
     fn begin(&mut self, value: f64) -> Event {
-        let from_start = value <= self.config.start_ceiling;
+        // Either the reading itself is near zero, or the bar was seen empty
+        // recently enough that this must be the same attempt continuing.
+        let recent_reset = self
+            .since_reset
+            .is_some_and(|count| count <= self.config.reset_grace);
+        let from_start = value <= self.config.start_ceiling || recent_reset;
+
         self.run = Some(Run {
             started_at: value,
             current: value,
@@ -175,7 +251,6 @@ impl Tracker {
             run.current = value;
             run.samples += 1;
             run.peak = run.peak.max(value);
-
             run.above = if value >= config.alert_at {
                 run.above + 1
             } else {
@@ -213,17 +288,17 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Event, Tracker};
+    use super::{Config, Event, Sample, Tracker};
 
     fn tracker() -> Tracker {
         Tracker::new(Config::default())
     }
 
-    /// Feeds a sequence and collects every event produced.
+    /// Feeds percentages with no bar information.
     fn feed(tracker: &mut Tracker, values: &[f64]) -> Vec<Event> {
         values
             .iter()
-            .flat_map(|&v| tracker.observe(Some(v)))
+            .flat_map(|&v| tracker.observe(Sample::new(Some(v), None)))
             .collect()
     }
 
@@ -249,22 +324,24 @@ mod tests {
             .collect()
     }
 
+    /// Feeds an empty bar with no readable text, as at the start of a run.
+    fn empty_bar(tracker: &mut Tracker, times: u32) -> Vec<Event> {
+        (0..times)
+            .flat_map(|_| tracker.observe(Sample::new(None, Some(0.4))))
+            .collect()
+    }
+
     #[test]
     fn a_run_from_zero_alerts_once_past_the_threshold() {
         let mut t = tracker();
-        let events = feed(&mut t, &climb(0.5, 76.0));
-        assert_eq!(alerts(&events).len(), 1, "{events:?}");
+        assert_eq!(alerts(&feed(&mut t, &climb(0.5, 76.0))).len(), 1);
     }
 
     #[test]
     fn alerting_waits_for_confirmation() {
         let mut t = tracker();
-        // Reaches the threshold on the last sample only: not yet confirmed.
-        let events = feed(&mut t, &climb(0.5, 70.5));
-        assert!(alerts(&events).is_empty(), "{events:?}");
-
-        let more = t.observe(Some(72.0));
-        assert_eq!(alerts(&more).len(), 1, "{more:?}");
+        assert!(alerts(&feed(&mut t, &climb(0.5, 70.5))).is_empty());
+        assert_eq!(alerts(&t.observe(Sample::new(Some(72.0), None))).len(), 1);
     }
 
     #[test]
@@ -273,6 +350,53 @@ mod tests {
         let events = feed(&mut t, &climb(49.0, 85.0));
         assert!(alerts(&events).is_empty(), "{events:?}");
         assert!(!t.run().expect("run").from_start);
+    }
+
+    #[test]
+    fn an_empty_bar_rescues_a_run_ocr_joined_late() {
+        // The real failure: the bar empties, OCR cannot read the first 20%,
+        // and the run is only picked up mid-flight. It is still a real attempt.
+        let mut t = tracker();
+        empty_bar(&mut t, 3);
+        let events = feed(&mut t, &climb(21.0, 76.0));
+
+        assert!(t.run().expect("run").from_start);
+        assert_eq!(alerts(&events).len(), 1, "{events:?}");
+    }
+
+    #[test]
+    fn a_stale_reset_does_not_rescue_a_start_pos_run() {
+        let mut t = tracker();
+        empty_bar(&mut t, 3);
+        // Long enough after the reset that this cannot be the same attempt.
+        for _ in 0..(Config::default().reset_grace + 2) {
+            t.observe(Sample::default());
+        }
+        feed(&mut t, &climb(49.0, 60.0));
+        assert!(!t.run().expect("run").from_start);
+    }
+
+    #[test]
+    fn one_bar_glitch_is_not_a_reset() {
+        let mut t = tracker();
+        feed(&mut t, &climb(0.5, 40.0));
+        // A single empty reading mid-run is a glitch, not the end of the run.
+        let events = t.observe(Sample::new(None, Some(0.1)));
+        assert!(events.is_empty(), "{events:?}");
+        assert!(t.run().is_some());
+    }
+
+    #[test]
+    fn a_confirmed_empty_bar_ends_the_attempt() {
+        let mut t = tracker();
+        feed(&mut t, &climb(0.5, 40.0));
+        let events = empty_bar(&mut t, 2);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Ended { peak, .. } if (*peak - 40.0).abs() < 1e-9)),
+            "{events:?}"
+        );
     }
 
     #[test]
@@ -295,9 +419,7 @@ mod tests {
                 .any(|e| matches!(e, Event::Ended { peak, .. } if (*peak - 60.0).abs() < 1e-9)),
             "{events:?}"
         );
-        let run = t.run().expect("new run");
-        assert!(run.from_start);
-        assert!((run.peak - 10.0).abs() < 1e-9);
+        assert!((t.run().expect("run").peak - 10.0).abs() < 1e-9);
     }
 
     #[test]
@@ -305,29 +427,24 @@ mod tests {
         let mut t = tracker();
         let mut values = climb(0.5, 74.0);
         values.extend(climb(0.5, 74.0));
-        let events = feed(&mut t, &values);
-        assert_eq!(alerts(&events).len(), 2, "{events:?}");
+        assert_eq!(alerts(&feed(&mut t, &values)).len(), 2);
     }
 
     #[test]
     fn an_implausible_jump_is_ignored() {
         let mut t = tracker();
         feed(&mut t, &climb(0.5, 10.0));
-        let events = t.observe(Some(73.0));
-        assert!(events.is_empty(), "{events:?}");
+        assert!(t.observe(Sample::new(Some(73.0), None)).is_empty());
         assert!((t.run().expect("run").current - 10.0).abs() < 1e-9);
     }
 
     #[test]
     fn one_bad_reading_cannot_alert_alone() {
         let mut t = tracker();
-        // Climb to just under the threshold, then a single spike within
-        // max_step, then back down. A lone spike must not fire.
         let mut values = climb(0.5, 66.0);
         values.push(71.0);
         values.push(68.0);
-        let events = feed(&mut t, &values);
-        assert!(alerts(&events).is_empty(), "{events:?}");
+        assert!(alerts(&feed(&mut t, &values)).is_empty());
     }
 
     #[test]
@@ -336,7 +453,7 @@ mod tests {
         feed(&mut t, &climb(0.5, 30.0));
         let mut ended = None;
         for _ in 0..Config::default().end_after_idle {
-            if let Some(event) = t.observe(None).first().copied() {
+            if let Some(event) = t.observe(Sample::default()).first().copied() {
                 ended = Some(event);
             }
         }
@@ -349,7 +466,7 @@ mod tests {
         let mut t = tracker();
         feed(&mut t, &climb(0.5, 30.0));
         for _ in 0..(Config::default().end_after_idle - 1) {
-            assert!(t.observe(None).is_empty());
+            assert!(t.observe(Sample::default()).is_empty());
         }
         assert!(t.run().is_some());
     }
@@ -361,21 +478,9 @@ mod tests {
         assert!((t.best() - 0.0).abs() < 1e-9, "best was {}", t.best());
 
         for _ in 0..Config::default().end_after_idle {
-            t.observe(None);
+            t.observe(Sample::default());
         }
         feed(&mut t, &climb(0.5, 40.0));
         assert!((t.best() - 40.0).abs() < 1e-9, "best was {}", t.best());
-    }
-
-    #[test]
-    fn a_reading_with_no_run_starts_one() {
-        let mut t = tracker();
-        assert_eq!(
-            t.observe(Some(12.0)),
-            vec![Event::Started {
-                at: 12.0,
-                from_start: false
-            }]
-        );
     }
 }

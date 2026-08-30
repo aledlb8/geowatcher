@@ -8,7 +8,7 @@ use std::path::Path;
 
 use geowatcher_lib::capture::Frame;
 use geowatcher_lib::detect::{builtin, candidates, read_percentage, BarRegion, Calibrator};
-use geowatcher_lib::run::{Config, Event, Tracker};
+use geowatcher_lib::run::{Config, Event, Sample, Tracker};
 
 fn main() {
     let dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_owned());
@@ -37,8 +37,11 @@ fn main() {
     let (mut attempts, mut real, mut alerts) = (0, 0, 0);
 
     for (index, frame) in frames.iter().enumerate() {
-        let reading = read_percentage(frame, &bar, &templates).map(|r| r.value);
-        for event in tracker.observe(reading) {
+        let sample = Sample::new(
+            read_percentage(frame, &bar, &templates).map(|r| r.value),
+            bar.fill_ratio(frame).map(|r| r * 100.0),
+        );
+        for event in tracker.observe(sample) {
             match event {
                 Event::Started { at, from_start } => {
                     attempts += 1;
