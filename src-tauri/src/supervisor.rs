@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::Serialize;
+use tauri::async_runtime::JoinHandle;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::task::JoinHandle;
 
 use crate::capture::{Capture, CaptureOptions};
 use crate::config::{Channel, Settings};
@@ -115,7 +115,10 @@ impl Supervisor {
         };
 
         let login = channel.login.clone();
-        self.tasks.insert(login, tokio::spawn(watcher.run()));
+        // Tauri's runtime, not `tokio::spawn`: synchronous commands run on a
+        // blocking pool with no tokio context, where `tokio::spawn` panics.
+        self.tasks
+            .insert(login, tauri::async_runtime::spawn(watcher.run()));
     }
 
     pub fn stop(&mut self, login: &str) {

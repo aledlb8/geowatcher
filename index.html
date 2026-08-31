@@ -1,10 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-surface="app">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>geowatcher</title>
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/mark.svg" />
+    <title>GeoWatcher</title>
+
+    <script>
+      // Runs before first paint so the widget window never flashes opaque.
+      // Must match the label in src-tauri/src/widget.rs.
+      document.documentElement.dataset.surface =
+        window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === "widget" ? "widget" : "app";
+    </script>
+
+    <style>
+      html {
+        background: #11111b;
+      }
+      html[data-surface="widget"] {
+        background: transparent;
+      }
+    </style>
   </head>
 
   <body>

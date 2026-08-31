@@ -1,10 +1,14 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 import App from "./App";
+import { surface } from "./lib/surface";
 import "./index.css";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+const root = document.getElementById("root");
+if (!root) throw new Error("missing #root");
+
+createRoot(root).render(
+  <StrictMode>
+    <App surface={surface()} />
+  </StrictMode>,
 );

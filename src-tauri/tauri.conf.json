@@ -12,9 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "geowatcher",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "GeoWatcher",
+        "width": 1000,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 560,
+        "visible": true
       }
     ],
     "security": {

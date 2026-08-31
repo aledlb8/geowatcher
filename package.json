@@ -39,6 +39,8 @@
     "verify": "npm run check && npm run typecheck && npm run rust:fmt:check && npm run rust:clippy"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "5.3.0",
+    "@fontsource/martian-mono": "5.3.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "react": "^19.2.8",

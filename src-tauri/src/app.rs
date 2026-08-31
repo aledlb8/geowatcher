@@ -9,10 +9,12 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
+use crate::appearance::Appearance;
 use crate::config::Settings;
 use crate::player;
 use crate::supervisor::{Supervisor, Update};
 use crate::twitch::TwitchClient;
+use crate::widget;
 
 /// Event name the frontend listens on.
 const UPDATE_EVENT: &str = "watcher://update";
@@ -28,6 +30,21 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Whether the widget should ignore the cursor, for the hover watcher.
+    #[must_use]
+    pub fn click_through(&self) -> bool {
+        self.settings
+            .lock()
+            .is_ok_and(|s| s.appearance.click_through)
+    }
+
+    fn appearance(&self) -> Appearance {
+        self.settings
+            .lock()
+            .map(|s| s.appearance.clone())
+            .unwrap_or_default()
+    }
+
     fn save(&self) -> Result<(), String> {
         let settings = self.settings.lock().map_err(|_| "settings lock poisoned")?;
         settings
@@ -141,6 +158,73 @@ fn open_channel(login: String, state: State<'_, AppState>) -> Result<String, Str
         .map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn set_appearance(
+    appearance: Appearance,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Appearance, String> {
+    let mut appearance = appearance;
+    appearance.sanitise();
+    {
+        let mut settings = state.settings.lock().map_err(|_| "lock poisoned")?;
+        settings.appearance = appearance.clone();
+    }
+    state.save()?;
+
+    widget::ensure(&app, &appearance).map_err(|err| err.to_string())?;
+    widget::apply(&app, &appearance).map_err(|err| err.to_string())?;
+    Ok(appearance)
+}
+
+/// The widget reports its rendered height so the window can hug its content.
+#[tauri::command]
+fn resize_widget(height: f64, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let appearance = state.appearance();
+    let Some(window) = app.get_webview_window(widget::LABEL) else {
+        return Ok(());
+    };
+    window
+        .set_size(tauri::LogicalSize::new(
+            f64::from(appearance.width),
+            height.clamp(24.0, 2000.0),
+        ))
+        .map_err(|err| err.to_string())?;
+    widget::reposition(&app, &appearance).map_err(|err| err.to_string())
+}
+
+/// Extra CSS injected into the widget, for anything the controls do not cover.
+#[tauri::command]
+fn get_user_css(state: State<'_, AppState>) -> Result<String, String> {
+    let path = crate::config::Settings::user_css_path(&state.settings_path);
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+#[tauri::command]
+fn set_user_css(css: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let path = crate::config::Settings::user_css_path(&state.settings_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    std::fs::write(&path, &css).map_err(|err| err.to_string())?;
+    let _ = app.emit("widget://css", css);
+    Ok(())
+}
+
+/// Reveals the folder holding settings.json and widget.css.
+#[tauri::command]
+fn open_config_folder(state: State<'_, AppState>) -> Result<(), String> {
+    let folder = state
+        .settings_path
+        .parent()
+        .ok_or("settings path has no parent")?;
+    tauri_plugin_opener::open_path(folder, None::<&str>).map_err(|err| err.to_string())
+}
+
 /// Channels currently live in the Geometry Dash directory.
 #[tauri::command]
 async fn discover(limit: Option<u32>) -> Result<Vec<serde_json::Value>, String> {
@@ -252,6 +336,11 @@ pub fn run() {
             set_enabled,
             open_channel,
             discover,
+            set_appearance,
+            resize_widget,
+            get_user_css,
+            set_user_css,
+            open_config_folder,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -274,6 +363,27 @@ pub fn run() {
 
             build_tray(&handle)?;
             tauri::async_runtime::spawn(pump(handle.clone(), rx));
+
+            let appearance = {
+                let state = handle.state::<AppState>();
+                state.appearance()
+            };
+            widget::ensure(&handle, &appearance)?;
+            widget::watch_hover(handle.clone());
+
+            // Show it straight away; otherwise the widget only ever appears
+            // after someone opens the appearance tab and changes something.
+            {
+                let handle = handle.clone();
+                let appearance = appearance.clone();
+                tauri::async_runtime::spawn(async move {
+                    // Let the webview paint once so the height is real.
+                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                    if let Err(err) = widget::apply(&handle, &appearance) {
+                        tracing::error!("could not place the widget: {err}");
+                    }
+                });
+            }
 
             // Watchers are started on the async runtime, where tokio::spawn works.
             tauri::async_runtime::spawn(async move {

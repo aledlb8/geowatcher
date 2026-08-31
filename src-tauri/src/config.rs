@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::appearance::Appearance;
 use crate::detect::BarRegion;
 
 /// A channel to watch.
@@ -88,6 +89,11 @@ pub struct Settings {
     /// Path to mpv; empty means look on `PATH`.
     #[serde(default)]
     pub mpv_path: String,
+    /// Path to ffmpeg; empty means the bundled sidecar, then `PATH`.
+    #[serde(default)]
+    pub ffmpeg_path: String,
+    #[serde(default)]
+    pub appearance: Appearance,
 }
 
 impl Default for Settings {
@@ -99,6 +105,8 @@ impl Default for Settings {
             open_on_click: true,
             fps: default_fps(),
             mpv_path: String::new(),
+            ffmpeg_path: String::new(),
+            appearance: Appearance::default(),
         }
     }
 }
@@ -114,6 +122,12 @@ impl Settings {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(err) => Err(Error::Io(err)),
         }
+    }
+
+    /// Location of the user stylesheet, beside the settings file.
+    #[must_use]
+    pub fn user_css_path(settings_path: &Path) -> PathBuf {
+        settings_path.with_file_name("widget.css")
     }
 
     pub fn save(&self, path: &Path) -> Result<(), Error> {

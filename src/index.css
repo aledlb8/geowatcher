@@ -1,1 +1,283 @@
 @import "tailwindcss";
+
+/* Bundled, not fetched: the app must look right with no network. */
+@import "@fontsource-variable/archivo";
+@import "@fontsource/martian-mono/400.css";
+@import "@fontsource/martian-mono/600.css";
+
+/* Catppuccin Mocha. Flat, matte, no effects — depth comes from the surface
+   steps and hairlines, never from shadow or glow. */
+@theme {
+  --color-crust: #11111b;
+  --color-mantle: #181825;
+  --color-base: #1e1e2e;
+  --color-surface0: #313244;
+  --color-surface1: #45475a;
+  --color-surface2: #585b70;
+  --color-overlay: #6c7086;
+  --color-muted: #a6adc8;
+  --color-fg: #cdd6f4;
+
+  --color-blue: #89b4fa;
+  --color-lavender: #b4befe;
+  --color-sapphire: #74c7ec;
+  --color-green: #a6e3a1;
+  --color-yellow: #f9e2af;
+  --color-peach: #fab387;
+  --color-red: #f38ba8;
+  --color-mauve: #cba6f7;
+
+  --font-sans: "Archivo Variable", Archivo, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--color-fg);
+    background: var(--color-crust);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The widget window is transparent; only its card paints. */
+  html[data-surface="widget"] body {
+    background: transparent;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-blue) 30%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface0);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-surface1);
+    background-clip: content-box;
+  }
+}
+
+/* Range inputs need real pseudo-elements; utilities cannot reach them. */
+@layer components {
+  .range {
+    --fill: 0%;
+    width: 100%;
+    height: 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    cursor: pointer;
+  }
+
+  .range::-webkit-slider-runnable-track {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      var(--color-blue) var(--fill),
+      var(--color-surface0) var(--fill)
+    );
+  }
+
+  .range::-webkit-slider-thumb {
+    width: 10px;
+    height: 10px;
+    margin-top: -4px;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 2px;
+    background: var(--color-blue);
+  }
+
+  .range:hover::-webkit-slider-thumb {
+    background: var(--color-lavender);
+  }
+
+  .range:focus-visible {
+    outline: 1px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+
+  .range::-moz-range-track {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      var(--color-blue) var(--fill),
+      var(--color-surface0) var(--fill)
+    );
+  }
+
+  .range::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--color-blue);
+  }
+}
+
+/* ---------------------------------------------------------------- widget
+   These class names are the contract for user CSS. They stay plain and
+   stable; restyle any of them from widget.css next to settings.json.
+   ---------------------------------------------------------------------- */
+
+.gw-root {
+  font-family: var(--gw-font);
+  font-size: var(--gw-size);
+  line-height: 1.35;
+  color: var(--gw-text);
+}
+
+.gw-card {
+  padding: var(--gw-pad);
+  border: 1px solid var(--gw-line);
+  border-radius: var(--gw-radius);
+  background: color-mix(in srgb, var(--gw-bg) calc(var(--gw-opacity) * 100%), transparent);
+  backdrop-filter: blur(16px);
+  transition: border-color 150ms ease;
+}
+
+.gw-root[data-hovered] .gw-card {
+  border-color: color-mix(in srgb, var(--gw-text) 32%, var(--gw-line));
+}
+
+.gw-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gw-gap);
+}
+
+.gw-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.gw-root[data-hovered] .gw-row {
+  cursor: pointer;
+}
+
+.gw-row:focus-visible {
+  outline: 1px solid var(--gw-text);
+  outline-offset: 3px;
+}
+
+.gw-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A rotated square: the shape the game is built out of. */
+.gw-mark {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.gw-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.gw-note {
+  margin-left: auto;
+  font-size: 0.82em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gw-dim);
+}
+
+.gw-value {
+  margin-left: auto;
+  font-family: var(--gw-numerals);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+}
+
+.gw-unit {
+  margin-left: 1px;
+  opacity: 0.45;
+}
+
+.gw-bar {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--gw-track);
+}
+
+.gw-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The signature: one tick per attempt, height by peak. */
+.gw-history {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  overflow: hidden;
+}
+
+.gw-tick {
+  /* Grows to fill, but capped so a handful of attempts still read as ticks
+     rather than stretching into wide segments. */
+  flex: 1 1 0;
+  min-width: 1px;
+  max-width: 8px;
+  border-radius: 1px;
+}
+
+.gw-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gw-pill-text {
+  font-size: 0.9em;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gw-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-fill,
+  .gw-card {
+    transition: none;
+  }
+}

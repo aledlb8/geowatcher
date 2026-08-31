@@ -139,13 +139,39 @@ needed. See the Tauri guides for
 The same applies to the built-in updater: it is not enabled here, and turning it on
 requires a signing keypair (`npm run tauri signer generate`).
 
+## The widget
+
+The app is a configurator. Watching happens in a small always-on-top card in a
+corner of the screen: one row per live channel with its name, current
+percentage, a progress bar, and an attempt-history strip.
+
+**Colour carries progress.** The bar, the number and every history tick shift
+along a ramp as a run climbs, so how close someone is reads without stopping to
+read the digits.
+
+**The history strip** draws one tick per finished attempt, height by how far it
+got, on a square-root scale because most attempts die in the first few percent.
+Start Pos runs are drawn faint, so earned progress never looks like dropped-in
+progress.
+
+The widget ignores the mouse until you hover it, and shrinks to a small pill
+when nothing is running. Every colour, size, font, corner and toggle is in the
+**Widget** tab, next to a preview that renders the real card either docked to a
+scale model of your screen or at actual size. Anything the controls miss goes in
+`widget.css` next to `settings.json` — target `.gw-card`, `.gw-row`,
+`.gw-value`, `.gw-bar` and `.gw-tick`.
+
 ## Project layout
 
 ```
 ├── src/                    React frontend
-│   ├── App.tsx             Root component
-│   ├── main.tsx            React entry point
-│   └── index.css           Tailwind entry point
+│   ├── main.tsx            Entry point
+│   ├── App.tsx             Picks a surface from the window label
+│   ├── index.css           Tailwind entry: theme tokens + widget contract
+│   ├── ui/                 Panels, fields, sliders, switches, icons
+│   ├── config/             The configurator window
+│   ├── widget/             The corner card, shared with the preview
+│   └── lib/                Commands, event stream, colour ramp
 ├── src-tauri/              Rust backend
 │   ├── src/lib.rs          Tauri commands and app setup
 │   ├── src/main.rs         Desktop binary entry point
