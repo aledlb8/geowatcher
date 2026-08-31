@@ -51,6 +51,8 @@ jobs:
 
       - name: Clippy
         run: npm run rust:clippy
+        env:
+          TAURI_CONFIG: '{"bundle":{"externalBin":[]}}'
 
   build:
     name: Build ${{ matrix.label }}
