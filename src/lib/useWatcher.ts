@@ -22,7 +22,7 @@ export function useWatcher(): Record<string, Live> {
         const entry = prev[update.login] ?? BLANK;
         switch (update.type) {
           case "status":
-            return { ...prev, [update.login]: { ...entry, status: update.status } };
+            return { ...prev, [update.login]: { ...entry, status: update.status, current: null } };
 
           case "progress":
             return {

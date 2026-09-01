@@ -23,10 +23,10 @@ use crate::twitch::{Error as TwitchError, TwitchClient};
 const OFFLINE_POLL: Duration = Duration::from_secs(90);
 
 /// Wait after a stream drops before reconnecting.
-const RECONNECT_DELAY: Duration = Duration::from_secs(10);
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 /// Wait after an unexpected failure, longer than a normal reconnect.
-const ERROR_BACKOFF: Duration = Duration::from_secs(60);
+const ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
 /// Bar fill must shift at least this many percent between frames to count as
 /// activity worth a fresh OCR pass. Below it the last reading is reused.
@@ -213,6 +213,7 @@ impl Watcher {
         };
 
         self.consume(capture, &variant.url).await;
+        self.report(Status::Connecting);
         RECONNECT_DELAY
     }
 
@@ -229,7 +230,7 @@ impl Watcher {
         let ocr_interval =
             ((f64::from(self.sample_fps) / f64::from(self.analyze_fps)).round() as u64).max(1);
         let mut frame_idx: u64 = 0;
-        let mut last_bar: Option<f64> = None;
+        let mut last_ocr_bar: Option<f64> = None;
         let mut held_text: Option<f64> = None;
         let mut last_progress: Option<f64> = None;
 
@@ -256,14 +257,10 @@ impl Watcher {
             // OCR is the expensive step; skip it while the bar is idle and reuse
             // the last reading, so a fast delivery rate costs little when nothing
             // is happening but reacts at once the moment a run moves.
-            let moved = match (last_bar, bar_value) {
-                (Some(a), Some(b)) => (a - b).abs() >= BAR_ACTIVITY_EPS,
-                (None, None) => false,
-                _ => true,
-            };
-            last_bar = bar_value;
+            let moved = bar_moved(&mut last_ocr_bar, bar_value);
 
             let text = if moved || frame_idx % ocr_interval == 0 {
+                last_ocr_bar = bar_value;
                 held_text = read_percentage(&frame, &region, &self.templates).map(|r| r.value);
                 held_text
             } else {
@@ -293,7 +290,6 @@ impl Watcher {
         }
 
         capture.shutdown().await;
-        self.report(Status::Offline);
     }
 
     fn emit(&self, event: run::Event, stream_url: &str) {
@@ -326,9 +322,21 @@ impl Watcher {
     }
 }
 
+fn bar_moved(last_ocr_bar: &mut Option<f64>, current: Option<f64>) -> bool {
+    let moved = match (*last_ocr_bar, current) {
+        (Some(a), Some(b)) => (a - b).abs() >= BAR_ACTIVITY_EPS,
+        (None, None) => false,
+        _ => true,
+    };
+    if moved {
+        *last_ocr_bar = current;
+    }
+    moved
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Status, Supervisor, Update};
+    use super::{bar_moved, Status, Supervisor, Update};
     use crate::config::{Channel, Settings};
 
     #[tokio::test]
@@ -390,5 +398,14 @@ mod tests {
         .expect("json");
         assert!(json.contains(r#""type":"alert""#), "{json}");
         assert!(json.contains("74.5"), "{json}");
+    }
+
+    #[test]
+    fn small_bar_changes_accumulate_until_ocr_is_due() {
+        let mut last = Some(10.0);
+        assert!(!bar_moved(&mut last, Some(10.1)));
+        assert!(!bar_moved(&mut last, Some(10.2)));
+        assert!(bar_moved(&mut last, Some(10.3)));
+        assert_eq!(last, Some(10.3));
     }
 }

@@ -99,6 +99,9 @@ impl Capture {
         let mut command = Command::new(&options.ffmpeg);
         command
             .args(["-hide_banner", "-loglevel", "error"])
+            // Start at the newest complete segment; ffmpeg's default is three
+            // segments back, which adds several seconds to Twitch low latency.
+            .args(["-live_start_index", "-1"])
             // No `-fflags nobuffer`: it breaks HLS demuxing and every frame
             // comes out identical. Latency is handled by fast_bread upstream.
             .args(["-i", &options.url])
