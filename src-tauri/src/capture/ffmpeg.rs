@@ -1,5 +1,6 @@
 //! Decodes an HLS stream into sampled grayscale frames via an ffmpeg child process.
 
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -60,12 +61,37 @@ impl CaptureOptions {
     }
 }
 
+/// A frame whose backing buffer returns to the reader's pool on drop, so a
+/// steady stream reuses a few allocations instead of one per frame.
+#[derive(Debug)]
+pub struct PooledFrame {
+    frame: Option<Frame>,
+    recycle: mpsc::Sender<Vec<u8>>,
+}
+
+impl Deref for PooledFrame {
+    type Target = Frame;
+
+    fn deref(&self) -> &Frame {
+        self.frame.as_ref().expect("frame taken only on drop")
+    }
+}
+
+impl Drop for PooledFrame {
+    fn drop(&mut self) {
+        if let Some(frame) = self.frame.take() {
+            let _ = self.recycle.try_send(frame.gray);
+        }
+    }
+}
+
 /// A running ffmpeg process yielding frames. Killing it on drop is deliberate:
 /// an orphaned ffmpeg keeps pulling the stream forever.
 #[derive(Debug)]
 pub struct Capture {
     child: Child,
     frames: mpsc::Receiver<Frame>,
+    recycle: mpsc::Sender<Vec<u8>>,
 }
 
 impl Capture {
@@ -104,18 +130,26 @@ impl Capture {
 
         let stdout = child.stdout.take().ok_or(Error::NoOutput)?;
         let (tx, frames) = mpsc::channel(CHANNEL_DEPTH);
-        tokio::spawn(read_frames(stdout, tx));
+        let (recycle, pool) = mpsc::channel(CHANNEL_DEPTH + 1);
+        tokio::spawn(read_frames(stdout, tx, pool));
 
         if let Some(stderr) = child.stderr.take() {
             tokio::spawn(log_stderr(stderr));
         }
 
-        Ok(Self { child, frames })
+        Ok(Self {
+            child,
+            frames,
+            recycle,
+        })
     }
 
     /// Next frame, or `None` once ffmpeg exits.
-    pub async fn next_frame(&mut self) -> Option<Frame> {
-        self.frames.recv().await
+    pub async fn next_frame(&mut self) -> Option<PooledFrame> {
+        self.frames.recv().await.map(|frame| PooledFrame {
+            frame: Some(frame),
+            recycle: self.recycle.clone(),
+        })
     }
 
     pub async fn shutdown(mut self) {
@@ -124,17 +158,24 @@ impl Capture {
 }
 
 /// Reads fixed-size frames until the stream ends. Drops rather than blocks when
-/// the consumer is behind, so ffmpeg never stalls waiting on us.
-async fn read_frames(mut stdout: tokio::process::ChildStdout, tx: mpsc::Sender<Frame>) {
+/// the consumer is behind, so ffmpeg never stalls waiting on us. Buffers come
+/// from the recycle pool when a consumed frame has returned one.
+async fn read_frames(
+    mut stdout: tokio::process::ChildStdout,
+    tx: mpsc::Sender<Frame>,
+    mut pool: mpsc::Receiver<Vec<u8>>,
+) {
     let frame_bytes = (ANALYSIS_WIDTH as usize) * (ANALYSIS_HEIGHT as usize);
-    let mut buffer = vec![0u8; frame_bytes];
 
     loop {
+        let mut buffer = pool.try_recv().unwrap_or_else(|_| vec![0u8; frame_bytes]);
+        buffer.resize(frame_bytes, 0);
+
         // A short read here means ffmpeg exited mid-frame.
         if stdout.read_exact(&mut buffer).await.is_err() {
             break;
         }
-        let frame = Frame::new(ANALYSIS_WIDTH, ANALYSIS_HEIGHT, buffer.clone());
+        let frame = Frame::new(ANALYSIS_WIDTH, ANALYSIS_HEIGHT, buffer);
         match tx.try_send(frame) {
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(_)) => {

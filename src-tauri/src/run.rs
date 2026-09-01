@@ -9,6 +9,10 @@
 //! gap: its absolute value is untrustworthy, but "near empty" is a dependable
 //! sign that an attempt just began.
 
+/// Sample rate the timing counts below are expressed at. A tracker fed at a
+/// different rate scales them to keep the same wall-clock behaviour.
+pub const REFERENCE_FPS: f32 = 3.0;
+
 /// Settings for one channel.
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -46,6 +50,22 @@ impl Default for Config {
             reset_grace: 15,
             end_after_idle: 9,
         }
+    }
+}
+
+impl Config {
+    /// Rescales the sample-count timings from [`REFERENCE_FPS`] to `fps`, so the
+    /// same durations hold whatever rate the tracker is fed at.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn scaled_to(mut self, fps: f32) -> Self {
+        let factor = f64::from(fps) / f64::from(REFERENCE_FPS);
+        let scale = |n: u32| ((f64::from(n) * factor).round() as u32).max(1);
+        self.confirm_samples = scale(self.confirm_samples);
+        self.reset_confirm = scale(self.reset_confirm);
+        self.reset_grace = scale(self.reset_grace);
+        self.end_after_idle = scale(self.end_after_idle);
+        self
     }
 }
 
@@ -119,10 +139,11 @@ pub struct Tracker {
 }
 
 impl Tracker {
+    /// `fps` is the rate samples will be fed at, used to scale the timings.
     #[must_use]
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, fps: f32) -> Self {
         Self {
-            config,
+            config: config.scaled_to(fps),
             run: None,
             idle: 0,
             best: 0.0,
@@ -288,10 +309,10 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Event, Sample, Tracker};
+    use super::{Config, Event, Sample, Tracker, REFERENCE_FPS};
 
     fn tracker() -> Tracker {
-        Tracker::new(Config::default())
+        Tracker::new(Config::default(), REFERENCE_FPS)
     }
 
     /// Feeds percentages with no bar information.
@@ -469,6 +490,17 @@ mod tests {
             assert!(t.observe(Sample::default()).is_empty());
         }
         assert!(t.run().is_some());
+    }
+
+    #[test]
+    fn timings_scale_with_the_feed_rate() {
+        // At double the reference rate, confirmation takes twice the samples,
+        // i.e. the same wall-clock time.
+        let mut t = Tracker::new(Config::default(), REFERENCE_FPS * 2.0);
+        assert!(alerts(&feed(&mut t, &climb(0.5, 70.5))).is_empty());
+        assert!(alerts(&t.observe(Sample::new(Some(72.0), None))).is_empty());
+        assert!(alerts(&t.observe(Sample::new(Some(72.0), None))).is_empty());
+        assert_eq!(alerts(&t.observe(Sample::new(Some(72.0), None))).len(), 1);
     }
 
     #[test]

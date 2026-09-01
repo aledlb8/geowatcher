@@ -1,4 +1,4 @@
-import type { CSSProperties, Ref } from "react";
+import { type CSSProperties, memo, type Ref } from "react";
 import { rampColor, rampTrack } from "../lib/ramp";
 import type { Appearance, Attempt } from "../lib/types";
 import { History } from "./History";
@@ -57,58 +57,79 @@ export function Card({ appearance, rows, collapsed, onOpen, cardRef }: Props) {
         </div>
       ) : (
         <div className="gw-rows">
-          {rows.map((row) => {
-            const percent = Math.min(row.percent ?? 0, 100);
-            const colour =
-              row.percent === null ? appearance.dim : rampColor(percent, appearance.ramp);
-
-            return (
-              <button
-                key={row.login}
-                type="button"
-                className="gw-row"
-                tabIndex={onOpen ? undefined : -1}
-                title={onOpen ? `Open ${row.login}` : undefined}
-                onClick={onOpen ? () => onOpen(row.login) : undefined}
-              >
-                <span className="gw-head">
-                  <Mark colour={colour} />
-                  <span className="gw-name">{row.login}</span>
-                  {row.percent === null ? (
-                    <span className="gw-note">{row.note}</span>
-                  ) : (
-                    <span className="gw-value" style={{ color: colour }}>
-                      {row.percent.toFixed(2)}
-                      <span className="gw-unit">%</span>
-                    </span>
-                  )}
-                </span>
-
-                {appearance.showBar && (
-                  <span className="gw-bar" style={{ height: appearance.barHeight }}>
-                    <span
-                      className="gw-fill"
-                      style={{ width: `${percent}%`, background: colour }}
-                    />
-                  </span>
-                )}
-
-                {appearance.showHistory && (
-                  <History
-                    attempts={row.history}
-                    ramp={appearance.ramp}
-                    height={appearance.historyHeight}
-                    limit={appearance.historyLength}
-                  />
-                )}
-              </button>
-            );
-          })}
+          {rows.map((row) => (
+            <Row key={row.login} row={row} appearance={appearance} onOpen={onOpen} />
+          ))}
         </div>
       )}
     </div>
   );
 }
+
+/**
+ * One channel's row. Memoised so a single channel's update does not reconcile
+ * every other row; `appearance` and `onOpen` must stay referentially stable
+ * across events for that to hold.
+ */
+const Row = memo(
+  function Row({
+    row,
+    appearance,
+    onOpen,
+  }: {
+    row: WidgetRow;
+    appearance: Appearance;
+    onOpen?: (login: string) => void;
+  }) {
+    const percent = Math.min(row.percent ?? 0, 100);
+    const colour = row.percent === null ? appearance.dim : rampColor(percent, appearance.ramp);
+
+    return (
+      <button
+        type="button"
+        className="gw-row"
+        tabIndex={onOpen ? undefined : -1}
+        title={onOpen ? `Open ${row.login}` : undefined}
+        onClick={onOpen ? () => onOpen(row.login) : undefined}
+      >
+        <span className="gw-head">
+          <Mark colour={colour} />
+          <span className="gw-name">{row.login}</span>
+          {row.percent === null ? (
+            <span className="gw-note">{row.note}</span>
+          ) : (
+            <span className="gw-value" style={{ color: colour }}>
+              {row.percent.toFixed(2)}
+              <span className="gw-unit">%</span>
+            </span>
+          )}
+        </span>
+
+        {appearance.showBar && (
+          <span className="gw-bar" style={{ height: appearance.barHeight }}>
+            <span className="gw-fill" style={{ width: `${percent}%`, background: colour }} />
+          </span>
+        )}
+
+        {appearance.showHistory && (
+          <History
+            attempts={row.history}
+            ramp={appearance.ramp}
+            height={appearance.historyHeight}
+            limit={appearance.historyLength}
+          />
+        )}
+      </button>
+    );
+  },
+  (a, b) =>
+    a.onOpen === b.onOpen &&
+    a.appearance === b.appearance &&
+    a.row.login === b.row.login &&
+    a.row.percent === b.row.percent &&
+    a.row.note === b.row.note &&
+    a.row.history === b.row.history,
+);
 
 /** Diamond mark, echoing the shape the game is built out of. */
 function Mark({ colour }: { colour: string }) {

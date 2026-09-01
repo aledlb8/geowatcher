@@ -9,6 +9,8 @@ export const setEnabled = (login: string, enabled: boolean) =>
   invoke<void>("set_enabled", { login, enabled });
 export const setThreshold = (login: string | null, percent: number) =>
   invoke<void>("set_threshold", { login, percent });
+export const setSampling = (sampleFps: number, analyzeFps: number) =>
+  invoke<void>("set_sampling", { sampleFps, analyzeFps });
 export const openChannel = (login: string) => invoke<string>("open_channel", { login });
 export const discover = (limit?: number) =>
   invoke<Array<{ login: string; viewers: number }>>("discover", { limit });

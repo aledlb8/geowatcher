@@ -126,6 +126,23 @@ fn set_threshold(
     state.resync()
 }
 
+/// Sets the frame delivery rate and the OCR analysis floor, then restarts
+/// watchers so the new cadence takes effect.
+#[tauri::command]
+fn set_sampling(
+    sample_fps: f32,
+    analyze_fps: f32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let mut settings = state.settings.lock().map_err(|_| "lock poisoned")?;
+        settings.sample_fps = sample_fps;
+        settings.fps = analyze_fps;
+    }
+    state.save()?;
+    state.resync()
+}
+
 #[tauri::command]
 fn set_enabled(login: String, enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
     {
@@ -333,6 +350,7 @@ pub fn run() {
             add_channel,
             remove_channel,
             set_threshold,
+            set_sampling,
             set_enabled,
             open_channel,
             discover,

@@ -10,7 +10,7 @@ use geowatcher_lib::capture::Frame;
 use geowatcher_lib::detect::{
     builtin, candidates, read_percentage, BarRegion, Calibrator, SourcePicker,
 };
-use geowatcher_lib::run::{Config, Event, Sample, Tracker};
+use geowatcher_lib::run::{Config, Event, Sample, Tracker, REFERENCE_FPS};
 
 fn main() {
     let dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_owned());
@@ -31,10 +31,13 @@ fn main() {
     };
 
     let templates = builtin();
-    let mut tracker = Tracker::new(Config {
-        alert_at,
-        ..Config::default()
-    });
+    let mut tracker = Tracker::new(
+        Config {
+            alert_at,
+            ..Config::default()
+        },
+        REFERENCE_FPS,
+    );
 
     let (mut attempts, mut real, mut alerts) = (0, 0, 0);
     let mut picker = SourcePicker::new();

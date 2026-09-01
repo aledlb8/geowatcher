@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { addChannel, removeChannel, setEnabled, setThreshold } from "../lib/api";
+import { addChannel, removeChannel, setEnabled, setSampling, setThreshold } from "../lib/api";
 import { rampColor } from "../lib/ramp";
 import { BLANK, type Channel, type Live, type Ramp, type Settings } from "../lib/types";
 import { Button, Card, Field, HEADING, IconButton, INPUT, Slider } from "../ui/primitives";
@@ -95,6 +95,13 @@ export function ChannelsView({ settings, live, onProblem, onChanged }: Props) {
       </Card>
 
       <DefaultAlert value={settings.alert_at} onChanged={onChanged} onProblem={onProblem} />
+
+      <Sampling
+        sampleFps={settings.sample_fps}
+        analyzeFps={settings.fps}
+        onChanged={onChanged}
+        onProblem={onProblem}
+      />
 
       <Discover known={settings.channels.map((c) => c.login)} onAdd={add} />
     </div>
@@ -229,6 +236,73 @@ function Status({ entry, paused }: { entry: Live; paused: boolean }) {
         <span className={`${BADGE} border-surface1 bg-surface0/50 text-overlay`}>offline</span>
       );
   }
+}
+
+/** How fast frames are sampled, trading CPU for lower alert latency. */
+function Sampling({
+  sampleFps,
+  analyzeFps,
+  onChanged,
+  onProblem,
+}: {
+  sampleFps: number;
+  analyzeFps: number;
+  onChanged: () => void;
+  onProblem: (message: string | null) => void;
+}) {
+  const [sample, setSample] = useState<number | null>(null);
+  const [analyze, setAnalyze] = useState<number | null>(null);
+  const shownSample = sample ?? sampleFps;
+  const shownAnalyze = analyze ?? analyzeFps;
+
+  const commit = (nextSample: number, nextAnalyze: number) => {
+    setSample(null);
+    setAnalyze(null);
+    if (nextSample === sampleFps && nextAnalyze === analyzeFps) return;
+    void setSampling(nextSample, nextAnalyze)
+      .then(onChanged)
+      .catch((err) => onProblem(String(err)));
+  };
+
+  return (
+    <Card title="Performance">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_260px]">
+        <p className="text-[12.5px] leading-relaxed text-overlay">
+          Frames are pulled at the sample rate and checked cheaply; the percentage is read at least
+          at the analysis floor, and faster while a run is moving. Raise the sample rate for lower
+          alert latency, lower it to spend less CPU.
+        </p>
+        <div className="flex flex-col gap-4">
+          <Field label="Sample rate" value={`${shownSample} fps`}>
+            <Slider
+              min={Math.max(2, shownAnalyze)}
+              max={15}
+              value={shownSample}
+              label="Frame sample rate"
+              onChange={setSample}
+              onCommit={(next) => {
+                if (sample === null) return;
+                commit(next, shownAnalyze);
+              }}
+            />
+          </Field>
+          <Field label="Analysis floor" value={`${shownAnalyze} fps`}>
+            <Slider
+              min={1}
+              max={Math.min(8, shownSample)}
+              value={shownAnalyze}
+              label="OCR analysis floor"
+              onChange={setAnalyze}
+              onCommit={(next) => {
+                if (analyze === null) return;
+                commit(shownSample, next);
+              }}
+            />
+          </Field>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 /** The threshold every channel without one of its own inherits. */

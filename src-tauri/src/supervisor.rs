@@ -28,6 +28,13 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(10);
 /// Wait after an unexpected failure, longer than a normal reconnect.
 const ERROR_BACKOFF: Duration = Duration::from_secs(60);
 
+/// Bar fill must shift at least this many percent between frames to count as
+/// activity worth a fresh OCR pass. Below it the last reading is reused.
+const BAR_ACTIVITY_EPS: f64 = 0.3;
+
+/// Identical progress readings are not re-emitted; a change must clear this.
+const PROGRESS_EPS: f64 = 0.001;
+
 /// What a channel is currently doing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -102,6 +109,7 @@ impl Supervisor {
     pub fn watch(&mut self, channel: &Channel, settings: &Settings) {
         self.stop(&channel.login);
 
+        let (sample_fps, analyze_fps) = settings.sampling();
         let watcher = Watcher {
             login: channel.login.clone(),
             config: run::Config {
@@ -109,7 +117,8 @@ impl Supervisor {
                 ..run::Config::default()
             },
             saved_bar: channel.calibration.map(Into::into),
-            fps: settings.fps,
+            sample_fps,
+            analyze_fps,
             updates: self.updates.clone(),
             templates: self.templates.clone(),
         };
@@ -145,7 +154,9 @@ struct Watcher {
     login: String,
     config: run::Config,
     saved_bar: Option<BarRegion>,
-    fps: f32,
+    /// Frames pulled from ffmpeg per second, and the OCR floor rate.
+    sample_fps: f32,
+    analyze_fps: f32,
     updates: UnboundedSender<Update>,
     templates: TemplateSet,
 }
@@ -190,7 +201,7 @@ impl Watcher {
             return ERROR_BACKOFF;
         };
 
-        let options = CaptureOptions::new(variant.url.clone()).fps(self.fps);
+        let options = CaptureOptions::new(variant.url.clone()).fps(self.sample_fps);
         let capture = match Capture::start(&options) {
             Ok(capture) => capture,
             Err(err) => {
@@ -209,8 +220,18 @@ impl Watcher {
     async fn consume(&self, mut capture: Capture, stream_url: &str) {
         let mut calibrator = Calibrator::new();
         let mut bar = self.saved_bar;
-        let mut tracker = Tracker::new(self.config);
+        // Fed at the delivery rate, so its sample-count timings hold in wall time.
+        let mut tracker = Tracker::new(self.config, self.sample_fps);
         let mut picker = SourcePicker::new();
+
+        // Run OCR on activity, and at least this often when the bar sits still.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let ocr_interval =
+            ((f64::from(self.sample_fps) / f64::from(self.analyze_fps)).round() as u64).max(1);
+        let mut frame_idx: u64 = 0;
+        let mut last_bar: Option<f64> = None;
+        let mut held_text: Option<f64> = None;
+        let mut last_progress: Option<f64> = None;
 
         self.report(if bar.is_some() {
             Status::Watching
@@ -230,14 +251,43 @@ impl Watcher {
             }
             let Some(region) = bar else { continue };
 
-            let text = read_percentage(&frame, &region, &self.templates).map(|r| r.value);
             let bar_value = region.fill_ratio(&frame).map(|ratio| ratio * 100.0);
+
+            // OCR is the expensive step; skip it while the bar is idle and reuse
+            // the last reading, so a fast delivery rate costs little when nothing
+            // is happening but reacts at once the moment a run moves.
+            let moved = match (last_bar, bar_value) {
+                (Some(a), Some(b)) => (a - b).abs() >= BAR_ACTIVITY_EPS,
+                (None, None) => false,
+                _ => true,
+            };
+            last_bar = bar_value;
+
+            let text = if moved || frame_idx % ocr_interval == 0 {
+                held_text = read_percentage(&frame, &region, &self.templates).map(|r| r.value);
+                held_text
+            } else {
+                held_text
+            };
+            frame_idx += 1;
 
             // The bar is still reported separately: even when it is not the
             // source, an empty bar is what marks the start of an attempt.
             let sample = Sample::new(picker.pick(text, bar_value), bar_value);
 
             for event in tracker.observe(sample) {
+                // Skip a progress event that repeats the last value; it would
+                // only cost an IPC round trip and a widget re-render.
+                match event {
+                    run::Event::Progressed { value }
+                        if last_progress.is_some_and(|p| (p - value).abs() < PROGRESS_EPS) =>
+                    {
+                        continue;
+                    }
+                    run::Event::Progressed { value } => last_progress = Some(value),
+                    run::Event::Started { .. } | run::Event::Ended { .. } => last_progress = None,
+                    run::Event::Alert { .. } => {}
+                }
                 self.emit(event, stream_url);
             }
         }

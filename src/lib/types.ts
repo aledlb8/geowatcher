@@ -69,6 +69,7 @@ export type Settings = {
   ignore_start_pos: boolean;
   open_on_click: boolean;
   fps: number;
+  sample_fps: number;
   mpv_path: string;
   ffmpeg_path: string;
   appearance: Appearance;

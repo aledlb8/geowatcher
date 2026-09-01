@@ -4,7 +4,7 @@ mod ffmpeg;
 mod frame;
 mod locate;
 
-pub use ffmpeg::{Capture, CaptureOptions, Error};
+pub use ffmpeg::{Capture, CaptureOptions, Error, PooledFrame};
 pub use frame::Frame;
 pub use locate::ffmpeg as locate_ffmpeg;
 

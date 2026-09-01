@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getSettings, getUserCss, onHover, onUserCss, openChannel, resizeWidget } from "../lib/api";
 import { BLANK, isLive, type Live, type Settings } from "../lib/types";
 import { useWatcher } from "../lib/useWatcher";
@@ -57,18 +57,23 @@ export function Widget() {
     return () => observer.disconnect();
   }, [appearance]);
 
-  if (!settings || !appearance) return null;
+  const open = useCallback((login: string) => void openChannel(login), []);
 
-  const rows: WidgetRow[] = settings.channels
-    .filter((channel) => channel.enabled)
-    .map((channel) => ({ login: channel.login, entry: live[channel.login] ?? BLANK }))
-    .filter(({ entry }) => appearance.showOffline || isLive(entry.status))
-    .map(({ login, entry }) => ({
-      login,
-      percent: entry.current,
-      note: note(entry),
-      history: entry.history,
-    }));
+  const rows: WidgetRow[] = useMemo(() => {
+    if (!settings || !appearance) return [];
+    return settings.channels
+      .filter((channel) => channel.enabled)
+      .map((channel) => ({ login: channel.login, entry: live[channel.login] ?? BLANK }))
+      .filter(({ entry }) => appearance.showOffline || isLive(entry.status))
+      .map(({ login, entry }) => ({
+        login,
+        percent: entry.current,
+        note: note(entry),
+        history: entry.history,
+      }));
+  }, [settings, appearance, live]);
+
+  if (!settings || !appearance) return null;
 
   const running = rows.some((row) => row.percent !== null);
 
@@ -81,7 +86,7 @@ export function Widget() {
         appearance={appearance}
         rows={rows}
         collapsed={appearance.collapseWhenIdle && !running && !hovered}
-        onOpen={(login) => void openChannel(login)}
+        onOpen={open}
         cardRef={card}
       />
     </div>

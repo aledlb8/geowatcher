@@ -83,9 +83,14 @@ pub struct Settings {
     /// Open the stream when a notification is clicked.
     #[serde(default = "yes")]
     pub open_on_click: bool,
-    /// Analysis frames per second, per channel.
+    /// OCR analysis floor: the slowest rate the percentage is read at, per
+    /// channel. Reads speed up on their own while a bar is moving.
     #[serde(default = "default_fps")]
     pub fps: f32,
+    /// Frames pulled from the decoder per second, per channel. Every one gets a
+    /// cheap bar check; the pricey OCR runs on a subset. Higher cuts latency.
+    #[serde(default = "default_sample_fps")]
+    pub sample_fps: f32,
     /// Path to mpv; empty means look on `PATH`.
     #[serde(default)]
     pub mpv_path: String,
@@ -104,6 +109,7 @@ impl Default for Settings {
             ignore_start_pos: true,
             open_on_click: true,
             fps: default_fps(),
+            sample_fps: default_sample_fps(),
             mpv_path: String::new(),
             ffmpeg_path: String::new(),
             appearance: Appearance::default(),
@@ -142,6 +148,15 @@ impl Settings {
     #[must_use]
     pub fn threshold_for(&self, channel: &Channel) -> f64 {
         channel.alert_at.unwrap_or(self.alert_at)
+    }
+
+    /// Clamped, coherent `(sample_fps, analyze_fps)`: the analysis floor never
+    /// exceeds the delivery rate, and both stay in a sane range.
+    #[must_use]
+    pub fn sampling(&self) -> (f32, f32) {
+        let analyze = self.fps.clamp(0.5, 30.0);
+        let sample = self.sample_fps.clamp(analyze, 30.0);
+        (sample, analyze)
     }
 
     #[must_use]
@@ -195,6 +210,10 @@ fn default_alert() -> f64 {
 
 fn default_fps() -> f32 {
     3.0
+}
+
+fn default_sample_fps() -> f32 {
+    8.0
 }
 
 #[cfg(test)]
